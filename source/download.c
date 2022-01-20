@@ -30,7 +30,7 @@ typedef struct
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files, void *userp)
 {
     ntwrk_struct_t *data_struct = (ntwrk_struct_t *)userp;
-    size_t realsize = size * num_files;
+    const size_t realsize = size * num_files;
 
     if (realsize + data_struct->offset >= data_struct->data_size)
     {
@@ -44,13 +44,13 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files,
     return realsize;
 }
 
-int download_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
+static int download_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
 {
     if (dltotal <= 0.0) return 0;
 
     struct timeval tv = {0};
     gettimeofday(&tv, NULL);
-    int counter = round(tv.tv_usec / 100000);
+    const int counter = round(tv.tv_usec / 100000);
 
     if (counter == 0 || counter == 2 || counter == 4 || counter == 6 || counter == 8)
     {
@@ -88,8 +88,8 @@ bool downloadFile(const char *url, const char *output, int api)
 
             if (api == OFF)
             {
-              curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-              curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, download_progress);
+                curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+                curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, download_progress);
             }
 
             // execute curl, save result
@@ -97,7 +97,9 @@ bool downloadFile(const char *url, const char *output, int api)
 
             // write from mem to file
             if (chunk.offset)
-              fwrite(chunk.data, 1, chunk.offset, fp);
+            {
+                fwrite(chunk.data, 1, chunk.offset, fp);
+            }
 
             // clean
             curl_easy_cleanup(curl);
@@ -112,7 +114,7 @@ bool downloadFile(const char *url, const char *output, int api)
             }
         }
     }
-    
+
     printf("\n\ndownload failed...\n\n");
     consoleUpdate(NULL);
     return false;

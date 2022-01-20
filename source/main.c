@@ -13,32 +13,34 @@
 #define APP_OUTPUT              "/switch/sigpatch-updater/sigpatch-updater.nro"
 #define OLD_APP_PATH            "/switch/sigpatch-updater.nro"
 
-#define APP_VERSION             "0.1.3"
-#define CURSOR_LIST_MAX         2
+#define APP_VERSION             "0.1.4"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
-const char *OPTION_LIST[] =
+static const char *OPTION_LIST[] =
 {
-    "= Update Sigpatches (For Atmosphere Users)",
-    "= Update Sigpatches (For Hekate / Kosmos Users)",
+    "= Update Sigpatches",
     "= Update this app"
 };
 
-void refreshScreen(int cursor)
+static void refreshScreen(int cursor)
 {
     consoleClear();
 
     printf("\x1B[36mSigpatch-Updater: v%s.\x1B[37m\n\n\n", APP_VERSION);
+    printf("This app is unmaintained, please consider using a different tool to update your patches!\n\n\n");
     printf("Press (A) to select option\n\n");
     printf("Press (+) to exit\n\n\n");
 
-    for (int i = 0; i < CURSOR_LIST_MAX + 1; i++)
+    for (int i = 0; i < ARRAY_SIZE(OPTION_LIST); i++)
+    {
         printf("[%c] %s\n\n", cursor == i ? 'X' : ' ', OPTION_LIST[i]);
+    }
 
     consoleUpdate(NULL);
 }
 
-void printDisplay(const char *text, ...)
+static void printDisplay(const char *text, ...)
 {
     va_list v;
     va_start(v, text);
@@ -47,30 +49,47 @@ void printDisplay(const char *text, ...)
     consoleUpdate(NULL);
 }
 
-int appInit()
+// update the cursor so that it wraps around
+static void update_cursor(int* cur, int new_value, int max)
 {
-    consoleInit(NULL);
-    socketInitializeDefault();
-    return 0;
+    if (new_value >= max) new_value = 0;
+    else if (new_value < 0) new_value = max - 1;
+
+    *cur = new_value;
+    refreshScreen(new_value);
 }
 
-void appExit()
+// this is called before main
+void userAppInit(void)
+{
+    appletLockExit();
+    consoleInit(NULL);
+    socketInitializeDefault();
+}
+
+// this is called after main exits
+void userAppExit(void)
 {
     socketExit();
     consoleExit(NULL);
+    appletUnlockExit();
 }
 
+// where the app starts
 int main(int argc, char **argv)
 {
     // init stuff
-    appInit();
     mkdir(APP_PATH, 0777);
 
     // change directory to root (defaults to /switch/)
     chdir(ROOT);
 
     // set the cursor position to 0
-    short cursor = 0;
+    int cursor = 0;
+
+    PadState pad = {0};
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+    padInitializeDefault(&pad);
 
     // main menu
     refreshScreen(cursor);
@@ -78,67 +97,57 @@ int main(int argc, char **argv)
     // muh loooooop
     while(appletMainLoop())
     {
-        hidScanInput();
-        u64 kDown = hidKeysDown(CONTROLLER_P1_AUTO);
+        padUpdate(&pad);
+        const u64 kDown = padGetButtonsDown(&pad);
 
         // move cursor down...
-        if (kDown & KEY_DOWN)
+        if (kDown & HidNpadButton_AnyDown)
         {
-            if (cursor == CURSOR_LIST_MAX) cursor = 0;
-            else cursor++;
-            refreshScreen(cursor);
+            update_cursor(&cursor, cursor - 1, ARRAY_SIZE(OPTION_LIST));
         }
 
         // move cursor up...
-        if (kDown & KEY_UP)
+        if (kDown & HidNpadButton_AnyUp)
         {
-            if (cursor == 0) cursor = CURSOR_LIST_MAX;
-            else cursor--;
-            refreshScreen(cursor);
+            update_cursor(&cursor, cursor + 1, ARRAY_SIZE(OPTION_LIST));
         }
 
-        if (kDown & KEY_A)
+        if (kDown & HidNpadButton_A)
         {
             switch (cursor)
             {
-            case UP_SIGS:
-                if (downloadFile(AMS_SIG_URL, TEMP_FILE, OFF))
-                    unzip(TEMP_FILE);
-                else
-                {
-                    printDisplay("Failed to download ams sigpatches\n");
-                }
-                break;
+                case UP_SIGS:
+                    if (downloadFile(AMS_SIG_URL, TEMP_FILE, OFF))
+                    {
+                        unzip(TEMP_FILE);
+                    }
+                    else
+                    {
+                        printDisplay("Failed to download sigpatches\n");
+                    }
+                    break;
 
-            case UP_JOONIE:
-                if (downloadFile(HEKATE_SIG_URL, TEMP_FILE, OFF))
-                    unzip(TEMP_FILE);
-                else
-                {
-                    printDisplay("Failed to download hekate sigpatches\n");
-                }
-                break;
-
-            case UP_APP:
-                if (downloadFile(APP_URL, TEMP_FILE, OFF))
-                {
-                    remove(APP_OUTPUT);
-                    rename(TEMP_FILE, APP_OUTPUT);
-                    remove(OLD_APP_PATH);
-                }
-                else
-                {
-                    printDisplay("Failed to download app update\n");
-                }
-                break;
+                case UP_APP:
+                    if (downloadFile(APP_URL, TEMP_FILE, OFF))
+                    {
+                        remove(APP_OUTPUT);
+                        rename(TEMP_FILE, APP_OUTPUT);
+                        remove(OLD_APP_PATH);
+                    }
+                    else
+                    {
+                        printDisplay("Failed to download app update\n");
+                    }
+                    break;
             }
         }
-        
+
         // exit...
-        if (kDown & KEY_PLUS) break;
+        if (kDown & HidNpadButton_Plus) break;
+
+        // 1e+9 = 1 second
+        svcSleepThread(1e+9 / 60);
     }
 
-    // cleanup then exit
-    appExit();
     return 0;
 }

@@ -39,7 +39,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 APP_TITLE   := 	Sigpatch-Updater
 APP_AUTHOR  := 	TotalJustice
-APP_VERSION := 	0.1.3
+APP_VERSION := 	0.1.4
 
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
@@ -53,15 +53,15 @@ INCLUDES	:=	includes
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -Wall -O3 -ffunction-sections \
+CFLAGS	:=	-Wall -O3 -ffunction-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
-ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+ASFLAGS	:=	$(ARCH)
+LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:=  -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lminizip -lz -lnx
 
@@ -177,6 +177,11 @@ else
 	@rm -fr $(BUILD) $(TARGET).nsp $(TARGET).nso $(TARGET).npdm $(TARGET).elf
 endif
 
+#---------------------------------------------------------------------------------
+nxlink: all
+	@echo making and nxlinking ...
+
+	nxlink $(CURDIR)/$(TARGET).nro
 
 #---------------------------------------------------------------------------------
 else
