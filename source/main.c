@@ -1,3 +1,4 @@
+#include <curl/curl.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h> // chdir
@@ -78,6 +79,8 @@ void userAppExit(void)
 // where the app starts
 int main(int argc, char **argv)
 {
+    curl_global_init(CURL_GLOBAL_ALL);
+
     // init stuff
     mkdir(APP_PATH, 0777);
 
@@ -149,5 +152,6 @@ int main(int argc, char **argv)
         svcSleepThread(1e+9 / 60);
     }
 
+    curl_global_cleanup();
     return 0;
 }
