@@ -37,11 +37,11 @@ include $(DEVKITPRO)/libnx/switch_rules
 #   of a homebrew executable (.nro). This is intended to be used for sysmodules.
 #   NACP building is skipped as well.
 #---------------------------------------------------------------------------------
-APP_TITLE   := 	Sigpatch-Updater
+APP_TITLE   := 	sigpatch-updater
 APP_AUTHOR  := 	TotalJustice
-APP_VERSION := 	0.1.4
+APP_VERSION := 	0.2.0
 
-TARGET		:=	$(notdir $(CURDIR))
+TARGET		:=	sigpatch-updater
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
@@ -53,7 +53,7 @@ INCLUDES	:=	includes
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-Wall -O3 -ffunction-sections \
+CFLAGS	:=	-Wall -O2 -ffunction-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__
@@ -168,6 +168,10 @@ $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
+	@rm -rf out/
+	@mkdir -p out/switch/sigpatch-updater/
+	@cp $(CURDIR)/$(TARGET).nro out/switch/sigpatch-updater/
+
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
@@ -176,7 +180,12 @@ ifeq ($(strip $(APP_JSON)),)
 else
 	@rm -fr $(BUILD) $(TARGET).nsp $(TARGET).nso $(TARGET).npdm $(TARGET).elf
 endif
+#---------------------------------------------------------------------------------
+dist: all
+	@echo making dist ...
 
+	@rm -f sigpatch-updater.zip
+	@cd out; zip -r ../sigpatch-updater.zip ./*; cd ../
 #---------------------------------------------------------------------------------
 nxlink: all
 	@echo making and nxlinking ...

@@ -13,27 +13,23 @@
 #define API_AGENT           "ITotalJustice"
 #define _1MiB   0x100000
 
-typedef struct
-{
+typedef struct {
     char *memory;
     size_t size;
 } MemoryStruct_t;
 
-typedef struct
-{
+typedef struct {
     u_int8_t *data;
     size_t data_size;
     u_int64_t offset;
     FILE *out;
 } ntwrk_struct_t;
 
-static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files, void *userp)
-{
+static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files, void *userp) {
     ntwrk_struct_t *data_struct = (ntwrk_struct_t *)userp;
     const size_t realsize = size * num_files;
 
-    if (realsize + data_struct->offset >= data_struct->data_size)
-    {
+    if (realsize + data_struct->offset >= data_struct->data_size) {
         fwrite(data_struct->data, data_struct->offset, 1, data_struct->out);
         data_struct->offset = 0;
     }
@@ -44,16 +40,14 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files,
     return realsize;
 }
 
-static int download_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
-{
+static int download_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow) {
     if (dltotal <= 0.0) return 0;
 
     struct timeval tv = {0};
     gettimeofday(&tv, NULL);
     const int counter = round(tv.tv_usec / 100000);
 
-    if (counter == 0 || counter == 2 || counter == 4 || counter == 6 || counter == 8)
-    {
+    if (counter == 0 || counter == 2 || counter == 4 || counter == 6 || counter == 8) {
         printf("* DOWNLOADING: %.2fMB of %.2fMB *\r", dlnow / _1MiB, dltotal / _1MiB);
         consoleUpdate(NULL);
     }
@@ -61,14 +55,11 @@ static int download_progress(void *p, double dltotal, double dlnow, double ultot
     return 0;
 }
 
-bool downloadFile(const char *url, const char *output, int api)
-{
+bool downloadFile(const char *url, const char *output, int api) {
     CURL *curl = curl_easy_init();
-    if (curl)
-    {
+    if (curl) {
         FILE *fp = fopen(output, "wb");
-        if (fp)
-        {
+        if (fp) {
             printf("\n");
 
             ntwrk_struct_t chunk = {0};
@@ -86,8 +77,7 @@ bool downloadFile(const char *url, const char *output, int api)
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
 
-            if (api == OFF)
-            {
+            if (api == OFF) {
                 curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
                 curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, download_progress);
             }
@@ -96,8 +86,7 @@ bool downloadFile(const char *url, const char *output, int api)
             CURLcode res = curl_easy_perform(curl);
 
             // write from mem to file
-            if (chunk.offset)
-            {
+            if (chunk.offset) {
                 fwrite(chunk.data, 1, chunk.offset, fp);
             }
 
@@ -106,8 +95,7 @@ bool downloadFile(const char *url, const char *output, int api)
             free(chunk.data);
             fclose(chunk.out);
 
-            if (res == CURLE_OK)
-            {
+            if (res == CURLE_OK) {
                 printf("\n\ndownload complete!\n\n");
                 consoleUpdate(NULL);
                 return true;

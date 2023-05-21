@@ -1,6 +1,7 @@
-/old_romfs*
-/.vscode*
-/build*
+build
 *.elf
 *.nacp
 *.nro
+!.vscode/c_cpp_properties.json
+*.zip
+out

@@ -9,14 +9,18 @@
 #define WRITEBUFFERSIZE 0x1000 // 4KiB
 #define MAXFILENAME     0x301
 
-int unzip(const char *output)
-{
+bool unzip(const char *output) {
     unzFile zfile = unzOpen(output);
-    unz_global_info gi = {0};
-    unzGetGlobalInfo(zfile, &gi);
+    if (!zfile) {
+        return false;
+    }
 
-    for (int i = 0; i < gi.number_entry; i++)
-    {
+    unz_global_info gi = {0};
+    if (UNZ_OK != unzGetGlobalInfo(zfile, &gi)) {
+        return false;
+    }
+
+    for (int i = 0; i < gi.number_entry; i++) {
         char filename_inzip[MAXFILENAME] = {0};
         unz_file_info file_info = {0};
 
@@ -24,20 +28,16 @@ int unzip(const char *output)
         unzGetCurrentFileInfo(zfile, &file_info, filename_inzip, sizeof(filename_inzip), NULL, 0, NULL, 0);
 
         // check if the string ends with a /, if so, then its a directory.
-        if ((filename_inzip[strlen(filename_inzip) - 1]) == '/')
-        {
+        if ((filename_inzip[strlen(filename_inzip) - 1]) == '/') {
             // check if directory exists
             DIR *dir = opendir(filename_inzip);
-            if (dir) closedir(dir);
-            else
-            {
+            if (dir) {
+                closedir(dir);
+            } else {
                 printf("creating directory: %s\n", filename_inzip);
                 mkdir(filename_inzip, 0777);
             }
-        }
-
-        else
-        {
+        } else {
             const char *write_filename = filename_inzip;
             FILE *outfile = fopen(write_filename, "wb");
             void *buf = malloc(WRITEBUFFERSIZE);
@@ -45,8 +45,9 @@ int unzip(const char *output)
             printf("writing file: %s\n", filename_inzip);
             consoleUpdate(NULL);
 
-            for (int j = unzReadCurrentFile(zfile, buf, WRITEBUFFERSIZE); j > 0; j = unzReadCurrentFile(zfile, buf, WRITEBUFFERSIZE))
+            for (int j = unzReadCurrentFile(zfile, buf, WRITEBUFFERSIZE); j > 0; j = unzReadCurrentFile(zfile, buf, WRITEBUFFERSIZE)) {
                 fwrite(buf, 1, j, outfile);
+            }
 
             fclose(outfile);
             free(buf);
@@ -59,9 +60,8 @@ int unzip(const char *output)
 
     unzClose(zfile);
     remove(output);
-    
-    printf("\nfinished!\n\nRemember to reboot for the patches to be loaded!\n");
-    consoleUpdate(NULL);
 
-    return 0;
+    // todo: i assume everything above works fine
+    // this might not always be the case, add error handling!
+    return true;
 }
