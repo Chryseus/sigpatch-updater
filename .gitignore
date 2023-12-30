@@ -2,6 +2,7 @@ build
 *.elf
 *.nacp
 *.nro
+.vscode/*
 !.vscode/c_cpp_properties.json
 *.zip
 out

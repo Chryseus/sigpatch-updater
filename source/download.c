@@ -3,12 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <time.h>
-#include <math.h>
 #include <curl/curl.h>
 #include <switch.h>
 
 #include "download.h"
+#include "util.h"
 
 #define API_AGENT           "ITotalJustice"
 #define _1MiB   0x100000
@@ -19,9 +18,9 @@ typedef struct {
 } MemoryStruct_t;
 
 typedef struct {
-    u_int8_t *data;
+    uint8_t *data;
     size_t data_size;
-    u_int64_t offset;
+    uint64_t offset;
     FILE *out;
 } ntwrk_struct_t;
 
@@ -40,27 +39,20 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t num_files,
     return realsize;
 }
 
-static int download_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow) {
-    if (dltotal <= 0.0) return 0;
-
-    struct timeval tv = {0};
-    gettimeofday(&tv, NULL);
-    const int counter = round(tv.tv_usec / 100000);
-
-    if (counter == 0 || counter == 2 || counter == 4 || counter == 6 || counter == 8) {
-        printf("* DOWNLOADING: %.2fMB of %.2fMB *\r", dlnow / _1MiB, dltotal / _1MiB);
-        consoleUpdate(NULL);
+static int download_progress(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
+    const DlProgressCallback callback = (DlProgressCallback)clientp;
+    if (!callback(dltotal, dlnow, ultotal, ulnow)) {
+        return 1;
     }
-
     return 0;
 }
 
-bool downloadFile(const char *url, const char *output, int api) {
+bool downloadFile(const char *url, const char *output, DlProgressCallback pcall) {
     CURL *curl = curl_easy_init();
     if (curl) {
         FILE *fp = fopen(output, "wb");
         if (fp) {
-            printf("\n");
+            consolePrint("\nDownload in progress, Press (B) to cancel...\n\n");
 
             ntwrk_struct_t chunk = {0};
             chunk.data = malloc(_1MiB);
@@ -72,18 +64,41 @@ bool downloadFile(const char *url, const char *output, int api) {
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+            curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
 
             // write calls
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
 
-            if (api == OFF) {
-                curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-                curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, download_progress);
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, download_progress);
+            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, pcall);
+
+            CURLM *multi_handle = curl_multi_init();
+            curl_multi_add_handle(multi_handle, curl);
+            int still_running = 1;
+            CURLMcode mc;
+
+            while (still_running) {
+                mc = curl_multi_perform(multi_handle, &still_running);
+
+                if (!mc)
+                    mc = curl_multi_poll(multi_handle, NULL, 0, 1000, NULL);
+
+                if (mc) {
+                    break;
+                }
             }
 
-            // execute curl, save result
-            CURLcode res = curl_easy_perform(curl);
+            int msgs_left;
+            CURLMsg *msg;
+            CURLcode res = 1;
+
+            while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
+                if (msg->msg == CURLMSG_DONE) {
+                    res = msg->data.result;
+                }
+            }
 
             // write from mem to file
             if (chunk.offset) {
@@ -91,19 +106,21 @@ bool downloadFile(const char *url, const char *output, int api) {
             }
 
             // clean
+            curl_multi_remove_handle(multi_handle, curl);
             curl_easy_cleanup(curl);
+            curl_multi_cleanup(multi_handle);
             free(chunk.data);
             fclose(chunk.out);
 
             if (res == CURLE_OK) {
-                printf("\n\ndownload complete!\n\n");
-                consoleUpdate(NULL);
+                consolePrint("\n\ndownload complete!\n\n");
                 return true;
+            } else {
+                consolePrint("\n\ncurl error: %s", curl_easy_strerror(res));
             }
         }
     }
 
-    printf("\n\ndownload failed...\n\n");
-    consoleUpdate(NULL);
+    consolePrint("\n\ndownload failed...\n\n");
     return false;
 }

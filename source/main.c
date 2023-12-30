@@ -1,12 +1,16 @@
 #include <curl/curl.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 #include <unistd.h> // chdir
 #include <dirent.h> // mkdir
+#include <time.h>
+#include <math.h>
 #include <switch.h>
 
 #include "download.h"
 #include "unzip.h"
+#include "util.h"
 
 
 #define ROOT                    "/"
@@ -14,7 +18,7 @@
 #define APP_OUTPUT              "/switch/sigpatch-updater/sigpatch-updater.nro"
 #define OLD_APP_PATH            "/switch/sigpatch-updater.nro"
 
-#define APP_VERSION             "0.2.0"
+#define APP_VERSION             "0.3.0"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
@@ -25,13 +29,39 @@ struct Entry {
     const char* description;
 };
 
+static PadState g_pad;
+
+static bool progressCallback(u32 dltotal, u32 dlnow, u32 ultotal, u32 ulnow) {
+    if (!stillRunning()) {
+        return false;
+    }
+
+    padUpdate(&g_pad);
+    const u64 kDown = padGetButtonsDown(&g_pad);
+    if (kDown & HidNpadButton_B) {
+        return false;;
+    }
+
+    if (dltotal > 0) {
+        struct timeval tv = {0};
+        gettimeofday(&tv, NULL);
+        const int counter = round(tv.tv_usec / 100000);
+
+        if (counter == 0 || counter == 2 || counter == 4 || counter == 6 || counter == 8) {
+            const double mb = 1024*1024;
+            consolePrint("* DOWNLOADING: %.2fMB of %.2fMB *\r", (double)dlnow / mb, (double)dltotal / mb);
+        }
+    }
+
+    return true;
+}
+
 static bool update_sigpatches_handler(void) {
-    if (downloadFile(AMS_SIG_URL, TEMP_FILE, OFF)) {
+    if (downloadFile(AMS_SIG_URL, TEMP_FILE, progressCallback)) {
         if (!unzip(TEMP_FILE)) {
             return false;
         }
-        printf("\nfinished!\n\nRemember to reboot for the patches to be loaded!\n");
-        consoleUpdate(NULL);
+        consolePrint("\nfinished!\n\nRemember to reboot for the patches to be loaded!\n");
         return true;
     } else {
         return false;
@@ -39,7 +69,7 @@ static bool update_sigpatches_handler(void) {
 }
 
 static bool update_syspatch_handler(void) {
-    if (downloadFile(SYS_PATCH_URL, TEMP_FILE, OFF)) {
+    if (downloadFile(SYS_PATCH_URL, TEMP_FILE, progressCallback)) {
         if (!unzip(TEMP_FILE)) {
             return false;
         }
@@ -51,15 +81,13 @@ static bool update_syspatch_handler(void) {
         };
 
         if (R_FAILED(pmshellLaunchProgram(0, &location, &pid))) {
-            printf(
+            consolePrint(
                 "\nFailed to start sys-patch!\n"
                 "A reboot is needed...\n"
                 "Report this issue on GitHub please!\n");
-            consoleUpdate(NULL);
             return false;
         } else {
-            printf("\nsys-patch ran successfully, patches should be applied!\n");
-            consoleUpdate(NULL);
+            consolePrint("\nsys-patch ran successfully, patches should be applied!\n");
             return true;
         }
     } else {
@@ -68,12 +96,11 @@ static bool update_syspatch_handler(void) {
 }
 
 static bool update_app_handler(void) {
-    if (downloadFile(APP_URL, TEMP_FILE, OFF)) {
+    if (downloadFile(APP_URL, TEMP_FILE, progressCallback)) {
         remove(APP_OUTPUT);
         rename(TEMP_FILE, APP_OUTPUT);
         remove(OLD_APP_PATH);
-        printf("\nApp updated!\nRestart app to take effect");
-        consoleUpdate(NULL);
+        consolePrint("\nApp updated!\nRestart app to take effect");
         return true;
     } else {
         return false;
@@ -135,14 +162,6 @@ static void refreshScreen(int cursor) {
     consoleUpdate(NULL);
 }
 
-static void printDisplay(const char *text, ...) {
-    va_list v;
-    va_start(v, text);
-    vfprintf(stdout, text, v);
-    va_end(v);
-    consoleUpdate(NULL);
-}
-
 // update the cursor so that it wraps around
 static void update_cursor(int* cur, int new_value, int max) {
     if (new_value >= max) {
@@ -162,23 +181,28 @@ int main(int argc, char **argv) {
     // init stuff
     mkdir(APP_PATH, 0777);
 
+    // move nro to app folder
+    if (!strstr(argv[0], APP_OUTPUT)) {
+        remove(APP_OUTPUT);
+        rename(argv[0], APP_OUTPUT);
+    }
+
     // change directory to root (defaults to /switch/)
     chdir(ROOT);
 
     // set the cursor position to 0
     int cursor = 0;
 
-    PadState pad = {0};
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-    padInitializeDefault(&pad);
+    padInitializeDefault(&g_pad);
 
     // main menu
     refreshScreen(cursor);
 
     // muh loooooop
-    while (appletMainLoop()) {
-        padUpdate(&pad);
-        const u64 kDown = padGetButtonsDown(&pad);
+    while (stillRunning()) {
+        padUpdate(&g_pad);
+        const u64 kDown = padGetButtonsDown(&g_pad);
 
         // move cursor down...
         if (kDown & HidNpadButton_AnyDown) {
@@ -192,15 +216,28 @@ int main(int argc, char **argv) {
 
         else if (kDown & HidNpadButton_A) {
             if (get_wifi_state() < WifiState_1) {
-                printDisplay(
+                consolePrint(
                     "\n\n[Error] not connected to the internet!\n\n"
                     "An internet connection is required to download updates!\n");
             }
             else {
                 if (!ENTRIES[cursor].func()) {
-                    printDisplay("Failed to %s\n", ENTRIES[cursor].display_text);
+                    consolePrint("Failed to %s\n", ENTRIES[cursor].display_text);
                 }
             }
+
+            consolePrint("\nPress (A) to continue...\n");
+
+            while (stillRunning()) {
+                padUpdate(&g_pad);
+                const u64 kDown = padGetButtonsDown(&g_pad);
+                if (kDown & HidNpadButton_A) {
+                    break;
+                }
+                svcSleepThread(1e+9 / 60);
+            }
+
+            refreshScreen(cursor);
         }
 
         // exit...
